@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-memory-audit"
+version = "0.1.0"
+description = "Audit agent memory files for stale facts, missing sources, and secret markers."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [{name = "Manuel Sampedro"}]
+keywords = ["ai-agents", "memory", "audit", "safety", "cli"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Environment :: Console",
+]
+
+[project.scripts]
+agent-memory-audit = "agent_memory_audit.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
