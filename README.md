@@ -54,6 +54,9 @@ agent-memory-audit examples/memory.md --format json --today 2026-06-02
   when old entries still claim "current", "authenticated", or "latest" state.
 - External or current-state claims that mention live systems without nearby
   source evidence.
+- Source language that is too generic for current-state claims, such as
+  "manual note" without a concrete URL, file path, command/log, run ID,
+  issue/PR, receipt, report, or commit.
 - Public-action notes around posting, sending, deploying, publishing, deleting,
   billing, or credentials without explicit human approval language.
 - Absolute local paths that should be reviewed before public reuse.
@@ -66,6 +69,7 @@ Markdown output includes:
 
 - overall status and score,
 - finding severity, rule, file path, line number, reason, and redacted evidence,
+- per-file dated entry, stale date, and concrete source counts,
 - memory hygiene summary,
 - follow-up checks.
 
@@ -77,6 +81,8 @@ maintenance runs.
 - This is not a truth verifier.
 - This is not a full secret scanner.
 - Stale dates are review prompts, not automatic deletion requests.
+- Concrete source evidence means a claim has a reusable pointer, not that the
+  claim has been independently verified.
 - A clean report means no configured memory hygiene issue was detected, not that
   every stored fact is current.
 

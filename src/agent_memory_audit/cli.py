@@ -36,6 +36,18 @@ PROTECTIVE_SECRET_POLICY_RE = re.compile(
     re.IGNORECASE,
 )
 SOURCE_RE = re.compile(r"\b(source|sources|verified|evidence|from|see):", re.IGNORECASE)
+LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+")
+CONCRETE_SOURCE_RE = re.compile(
+    r"(https?://|"
+    r"`[^`]*(?:/|\.)(?:md|txt|json|ya?ml|toml|py|sh|log|csv|html?)`|"
+    r"\b[\w./-]+/[\w./-]+\.(?:md|txt|json|ya?ml|toml|py|sh|log|csv|html?)\b|"
+    r"\b[\w.-]+\.(?:md|txt|json|ya?ml|toml|py|sh|log|csv|html?)\b|"
+    r"\b(?:commit|sha)\s+[0-9a-f]{7,40}\b|"
+    r"\b(?:run|job|artifact|issue|pr|pull request)\s*(?:#|id|:)?\s*[A-Za-z0-9_-]+\b|"
+    r"\b(?:command|log|transcript|receipt|report):\s*\S+)",
+    re.IGNORECASE,
+)
 ABSOLUTE_PATH_RE = re.compile(r"(/Users/[^ \n]+|/home/[^ \n]+|/private/[^ \n]+)")
 
 
@@ -57,6 +69,7 @@ class FileSummary:
     stale_dates: int
     has_usage_rules: bool
     has_source_mentions: bool
+    concrete_source_mentions: int
 
 
 @dataclass(frozen=True)
@@ -84,9 +97,52 @@ def redact(text: str, limit: int = 180) -> str:
     return redacted
 
 
+def nearby_context(lines: Sequence[str], index: int) -> Sequence[str]:
+    if LIST_ITEM_RE.search(lines[index]):
+        end = min(len(lines), index + 3)
+        for position in range(index + 1, end):
+            if (
+                not lines[position].strip()
+                or LIST_ITEM_RE.search(lines[position])
+                or HEADING_RE.search(lines[position])
+            ):
+                end = position
+                break
+        return lines[index:end]
+
+    start = max(0, index - 2)
+    end = min(len(lines), index + 3)
+    for position in range(index - 1, start - 1, -1):
+        if (
+            not lines[position].strip()
+            or LIST_ITEM_RE.search(lines[position])
+            or HEADING_RE.search(lines[position])
+        ):
+            start = position + 1
+            break
+    for position in range(index + 1, end):
+        if (
+            not lines[position].strip()
+            or LIST_ITEM_RE.search(lines[position])
+            or HEADING_RE.search(lines[position])
+        ):
+            end = position
+            break
+    return lines[start:end]
+
+
 def nearby_source(lines: Sequence[str], index: int) -> bool:
-    window = lines[max(0, index - 2) : min(len(lines), index + 3)]
+    window = nearby_context(lines, index)
     return any(SOURCE_RE.search(line) for line in window)
+
+
+def is_concrete_source(line: str) -> bool:
+    return bool(SOURCE_RE.search(line) and CONCRETE_SOURCE_RE.search(line))
+
+
+def nearby_concrete_source(lines: Sequence[str], index: int) -> bool:
+    window = nearby_context(lines, index)
+    return any(is_concrete_source(line) for line in window)
 
 
 def is_protective_secret_policy(line: str) -> bool:
@@ -102,6 +158,7 @@ def audit_file(path: str, today: date, stale_days: int) -> tuple[FileSummary, li
     stale_dates = 0
     has_usage_rules = bool(re.search(r"^##?\s+Usage Rules\b", text, re.IGNORECASE | re.MULTILINE))
     has_source_mentions = bool(SOURCE_RE.search(text))
+    concrete_source_mentions = sum(1 for line in lines if is_concrete_source(line))
 
     if not has_usage_rules:
         findings.append(
@@ -168,17 +225,32 @@ def audit_file(path: str, today: date, stale_days: int) -> tuple[FileSummary, li
                     evidence=redact(stripped),
                 )
             )
-        if EXTERNAL_CLAIM_RE.search(stripped) and not nearby_source(lines, idx - 1):
-            findings.append(
-                Finding(
-                    severity="medium",
-                    rule="unsourced-current-claim",
-                    path=path,
-                    line=idx,
-                    reason="Current-state or external claim lacks nearby source evidence.",
-                    evidence=redact(stripped),
+        if EXTERNAL_CLAIM_RE.search(stripped):
+            if not nearby_source(lines, idx - 1):
+                findings.append(
+                    Finding(
+                        severity="medium",
+                        rule="unsourced-current-claim",
+                        path=path,
+                        line=idx,
+                        reason="Current-state or external claim lacks nearby source evidence.",
+                        evidence=redact(stripped),
+                    )
                 )
-            )
+            elif not nearby_concrete_source(lines, idx - 1):
+                findings.append(
+                    Finding(
+                        severity="medium",
+                        rule="weak-source-evidence",
+                        path=path,
+                        line=idx,
+                        reason=(
+                            "Current-state or external claim has source language, but no concrete URL, "
+                            "file path, command/log, run ID, issue/PR, receipt, report, or commit."
+                        ),
+                        evidence=redact(stripped),
+                    )
+                )
         if PUBLIC_ACTION_RE.search(stripped) and not APPROVAL_RE.search(stripped):
             severity = "high" if UNATTENDED_RE.search(stripped) else "medium"
             findings.append(
@@ -210,6 +282,7 @@ def audit_file(path: str, today: date, stale_days: int) -> tuple[FileSummary, li
             stale_dates=stale_dates,
             has_usage_rules=has_usage_rules,
             has_source_mentions=has_source_mentions,
+            concrete_source_mentions=concrete_source_mentions,
         ),
         findings,
     )
@@ -268,7 +341,7 @@ def render_markdown(report: AuditReport) -> str:
     for item in report.files:
         lines.append(
             f"- {item.path}: {item.lines} lines, {item.dated_entries} dated entries, "
-            f"{item.stale_dates} stale dates"
+            f"{item.stale_dates} stale dates, {item.concrete_source_mentions} concrete sources"
         )
     lines.append("")
     if report.findings:

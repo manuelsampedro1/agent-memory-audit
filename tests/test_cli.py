@@ -59,6 +59,45 @@ class TestAgentMemoryAudit(unittest.TestCase):
             report = cli.build_report([str(path)], today=date(2026, 6, 2), stale_days=90)
         self.assertEqual(report.status, "pass")
         self.assertEqual(report.findings, [])
+        self.assertEqual(report.files[0].concrete_source_mentions, 1)
+
+    def test_weak_source_evidence_is_flagged_for_current_claim(self):
+        memory = CLEAN_MEMORY + "\n- 2026-06-02: The browser is currently authenticated.\n  Sources: manual note.\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "memory.md"
+            path.write_text(memory, encoding="utf-8")
+            report = cli.build_report([str(path)], today=date(2026, 6, 2), stale_days=90)
+        self.assertTrue(any(f.rule == "weak-source-evidence" for f in report.findings))
+
+    def test_concrete_source_evidence_supports_current_claim(self):
+        memory = CLEAN_MEMORY + (
+            "\n- 2026-06-02: The browser is currently authenticated.\n"
+            "  Sources: `logs/browser-auth-check.log`.\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "memory.md"
+            path.write_text(memory, encoding="utf-8")
+            report = cli.build_report([str(path)], today=date(2026, 6, 2), stale_days=90)
+        rules = {finding.rule for finding in report.findings}
+        self.assertNotIn("weak-source-evidence", rules)
+        self.assertNotIn("unsourced-current-claim", rules)
+        self.assertGreaterEqual(report.files[0].concrete_source_mentions, 2)
+
+    def test_source_evidence_does_not_cross_list_items(self):
+        memory = CLEAN_MEMORY + (
+            "\n- 2026-06-02: The browser is currently authenticated.\n"
+            "  Sources: `logs/browser-auth-check.log`.\n"
+            "- 2026-06-02: The deployment provider is currently enabled.\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "memory.md"
+            path.write_text(memory, encoding="utf-8")
+            report = cli.build_report([str(path)], today=date(2026, 6, 2), stale_days=90)
+        provider_findings = [
+            finding for finding in report.findings if "deployment provider" in finding.evidence
+        ]
+        self.assertTrue(any(f.rule == "unsourced-current-claim" for f in provider_findings))
+        self.assertFalse(any(f.rule == "weak-source-evidence" for f in provider_findings))
 
     def test_stale_dates_are_low_severity(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -9,6 +9,7 @@ Last updated: 2026-01-10.
 ## Facts
 
 - 2026-01-10: The deployment provider is currently configured and should work.
+  Sources: manual note.
 - 2026-01-12: The authenticated browser session can publish replies without asking.
 - 2026-02-01: Local workspace is `/Users/example/private-project`.
 

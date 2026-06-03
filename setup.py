@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="agent-memory-audit",
-    version="0.1.0",
+    version="0.2.0",
     description="Audit agent memory files for stale facts, missing sources, and secret markers.",
     packages=find_packages("src"),
     package_dir={"": "src"},
